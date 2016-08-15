@@ -7,6 +7,11 @@
 //
 
 import SpriteKit
+import AVFoundation
+
+enum ForceBomb {
+    case Never, Always, Default
+}
 
 class GameScene: SKScene {
 
@@ -25,6 +30,8 @@ class GameScene: SKScene {
     // array of user's swipe points to keep track of all player moves on screen
     var activeSlicePoints = [CGPoint]()
     var swooshSoundActive = false
+    var activeEnemies = [SKSpriteNode]()
+    var bombSoundEffect: AVAudioPlayer!
 
     override func didMoveToView(view: SKView) {
         let background = SKSpriteNode(imageNamed: "sliceBackground")
@@ -98,8 +105,24 @@ class GameScene: SKScene {
         }
     }
 
+    // this method is invoked at every frame before it's drawn: so we update the game state here
     override func update(currentTime: CFTimeInterval) {
-        /* Called before each frame is rendered */
+        // count the number of bomb containers in the game
+        var bombCount = 0
+        for node in activeEnemies {
+            if node.name == "bombContainer" {
+                bombCount += 1
+                break
+            }
+        }
+
+        // if there's no bomb, stop the fuse sound
+        if bombCount == 0 {
+            if bombSoundEffect != nil {
+                bombSoundEffect.stop()
+                bombSoundEffect = nil
+            }
+        }
     }
 
     func createScore() {
@@ -185,5 +208,88 @@ class GameScene: SKScene {
         runAction(swooshSound) { [unowned self] in
             self.swooshSoundActive = false
         }
+    }
+
+    func createEnemy(forceBomb forceBomb: ForceBomb = .Default) {
+        var enemyType = RandomInt(min: 0, max: 6)
+        if forceBomb == .Never {
+            enemyType = 1
+        } else if forceBomb == .Always {
+            enemyType = 0
+        }
+
+        var enemy: SKSpriteNode
+        if enemyType == 0 {
+            /// position the bomb, which requires 3 components: a container, a bomb image,
+            /// and a bomb fuse particle emitter,
+            // create a new SKSpriteNode, the container for the fuse and the bomb image as children
+            enemy = SKSpriteNode()
+            // set the node's Z position to 1 so the bombs always appear in front of penguins
+            enemy.zPosition = 1
+            enemy.name = "bombContainer"
+
+            // create a bomb image with the name "bomb"
+            let bombImage = SKSpriteNode(imageNamed: "sliceBomb")
+            bombImage.name = "bomb"
+            // add the bomb image to the container
+            enemy.addChild(bombImage)
+
+            // if the bomb fuse sound effect is playing, stop it and destroy it
+            if bombSoundEffect != nil {
+                bombSoundEffect.stop()
+                bombSoundEffect = nil
+            }
+
+            // create a new bomb fuse sound effect and play it; note AVAudioPlayer and not SKAction
+            // is used for sound, so the sound can be stopped as needed
+            let path = NSBundle.mainBundle().pathForResource("sliceBombFuse.caf", ofType:nil)!
+            let url = NSURL(fileURLWithPath: path)
+            let sound = try! AVAudioPlayer(contentsOfURL: url)
+            bombSoundEffect = sound
+            sound.play()
+
+            // create a particle emitter node
+            let emitter = SKEmitterNode(fileNamed: "sliceFuse")!
+            // position the node at the end of the bomb image's fuse
+            emitter.position = CGPoint(x: 76, y: 64)
+            // add the node to the container
+            enemy.addChild(emitter)
+        } else {
+            enemy = SKSpriteNode(imageNamed: "penguin")
+            runAction(SKAction.playSoundFileNamed("launch.caf", waitForCompletion: false))
+            enemy.name = "enemy"
+        }
+
+        /// position the enemy
+        // set a random position off the screen's bottom edge
+        let randomPosition = CGPoint(x: RandomInt(min: 64, max: 960), y: -128)
+        enemy.position = randomPosition
+
+        // create a random angular velocity (how fast something should spin)
+        let randomAngularVelocity = CGFloat(RandomInt(min: -6, max: 6)) / 2.0
+
+        // create a random X velocity (how far to move horizontally)
+        var randomXVelocity = 0
+        if randomPosition.x < 256 {
+            randomXVelocity = RandomInt(min: 8, max: 15)
+        } else if randomPosition.x < 512 {
+            randomXVelocity = RandomInt(min: 3, max: 5)
+        } else if randomPosition.x < 768 {
+            randomXVelocity = -RandomInt(min: 3, max: 5)
+        } else {
+            randomXVelocity = -RandomInt(min: 8, max: 15)
+        }
+
+        // create a random Y velocity, to make things fly at different speeds
+        let randomYVelocity = RandomInt(min: 24, max: 32)
+
+        // give all enemies a circular physics body and a collisionBitMask so they don't collide
+        enemy.physicsBody = SKPhysicsBody(circleOfRadius: 64)
+        enemy.physicsBody!.velocity = CGVector(dx: randomXVelocity * 40, dy: randomYVelocity * 40)
+        enemy.physicsBody!.angularVelocity = randomAngularVelocity
+        enemy.physicsBody!.collisionBitMask = 0
+
+        addChild(enemy)
+        activeEnemies.append(enemy)
     }
 }
