@@ -49,6 +49,7 @@ class GameScene: SKScene {
     var chainDelay = 3.0
     // indicate when all the enemies are destroyed so we can create more
     var nextSequenceQueued = true
+    var gameEnded = false
 
     override func didMoveToView(view: SKView) {
         let background = SKSpriteNode(imageNamed: "sliceBackground")
@@ -106,6 +107,8 @@ class GameScene: SKScene {
     }
    
     override func touchesMoved(touches: Set<UITouch>, withEvent event: UIEvent?) {
+        if gameEnded { return }
+        
         // fetch the touch location
         guard let touch = touches.first else { return }
         let location = touch.locationInNode(self)
@@ -425,6 +428,8 @@ class GameScene: SKScene {
     }
 
     func tossEnemies() {
+        if gameEnded { return }
+
         // every time this method is called, decrease both popupTime and chainDelay so the game
         // gets harder as they play
         popupTime *= 0.991
@@ -483,5 +488,59 @@ class GameScene: SKScene {
         sequencePosition += 1
 
         nextSequenceQueued = false
+    }
+
+    // this method is called when a penguin falls off the screen without being sliced
+    func subtractLife() {
+        // decement the lives property
+        lives -= 1
+
+        // play a sound indicating something bad happened
+        runAction(SKAction.playSoundFileNamed("wrong.caf", waitForCompletion: false))
+
+        // update the livesImages array so that the correct number are crossed off
+        var life: SKSpriteNode
+        if lives == 2 {
+            life = livesImages[0]
+        } else if lives == 1 {
+            life = livesImages[1]
+        } else {
+            life = livesImages[2]
+            // end the game if the player is out of lives
+            endGame(triggeredByBomb: false)
+        }
+
+        // animate the life being lost
+        life.texture = SKTexture(imageNamed: "sliceLifeGone")
+        // set the X and Y scale of the life being lost to 1.3
+        life.xScale = 1.3
+        life.yScale = 1.3
+        // animate it back down to 1.0
+        life.runAction(SKAction.scaleTo(1, duration:0.1))
+    }
+
+    func endGame(triggeredByBomb triggeredByBomb: Bool) {
+        if gameEnded {
+            return
+        }
+
+        // the game hasn't ended
+        gameEnded = true
+        // stop every object from moving by adjusting the speed of the physics world to 0
+        physicsWorld.speed = 0
+        userInteractionEnabled = false
+
+        // stop any bomb fuse fizzing
+        if bombSoundEffect != nil {
+            bombSoundEffect.stop()
+            bombSoundEffect = nil
+        }
+
+        // set all 3 lives images to have the same "life gone" graphic
+        if triggeredByBomb {
+            livesImages[0].texture = SKTexture(imageNamed: "sliceLifeGone")
+            livesImages[1].texture = SKTexture(imageNamed: "sliceLifeGone")
+            livesImages[2].texture = SKTexture(imageNamed: "sliceLifeGone")
+        }
     }
 }
