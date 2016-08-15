@@ -12,6 +12,13 @@ import AVFoundation
 enum ForceBomb {
     case Never, Always, Default
 }
+// one enemy that definitely is a bomb, one that might or might not be a bomb, two where one is a bomb
+// and one isn't, then two/three/four random enemies, a chain of enemies, then a fast chain of enemies.
+// The first two will be used exclusively when the player first starts the game, to give them a gentle
+// warm up. After that, they'll be given random sequence types from TwoWithOneBomb to FastChain.
+enum SequenceType: Int {
+    case OneNoBomb, One, TwoWithOneBomb, Two, Three, Four, Chain, FastChain
+}
 
 class GameScene: SKScene {
 
@@ -32,6 +39,16 @@ class GameScene: SKScene {
     var swooshSoundActive = false
     var activeEnemies = [SKSpriteNode]()
     var bombSoundEffect: AVAudioPlayer!
+    // the amount of time to wait between the last enemy being destroyed and a new one being created
+    var popupTime = 0.9
+    // an array of SequenceType enum that defines what enemies to create
+    var sequence: [SequenceType]!
+    // where we are right now in the game
+    var sequencePosition = 0
+    // how long to wait before creating a new enemy when the sequence type is .Chain or .FastChain
+    var chainDelay = 3.0
+    // indicate when all the enemies are destroyed so we can create more
+    var nextSequenceQueued = true
 
     override func didMoveToView(view: SKView) {
         let background = SKSpriteNode(imageNamed: "sliceBackground")
@@ -49,6 +66,19 @@ class GameScene: SKScene {
         createScore()
         createLives()
         createSlices()
+
+        // fill the sequence array with 7 pre-written sequences to help players warm up to the game
+        sequence = [.OneNoBomb, .OneNoBomb, .TwoWithOneBomb, .TwoWithOneBomb, .Three, .One, .Chain]
+        // add 1001 random sequence types to fill up the game
+        for _ in 0 ... 1000 {
+            let nextSequence = SequenceType(rawValue: RandomInt(min: 2, max: 7))!
+            sequence.append(nextSequence)
+        }
+
+        // trigger the initial enemy toss after 2 seconds
+        RunAfterDelay(2) { [unowned self] in
+            self.tossEnemies()
+        }
     }
     
     override func touchesBegan(touches: Set<UITouch>, withEvent event: UIEvent?) {
@@ -107,6 +137,29 @@ class GameScene: SKScene {
 
     // this method is invoked at every frame before it's drawn: so we update the game state here
     override func update(currentTime: CFTimeInterval) {
+        if activeEnemies.count > 0 {
+            // if there's active enemies, loop through each of them
+            for node in activeEnemies {
+                if node.position.y < -140 {
+                    // if any enemy has Y position is lower than 140,
+                    // remove it from the game and from the activeEnemies array
+                    node.removeFromParent()
+                    if let index = activeEnemies.indexOf(node) {
+                        activeEnemies.removeAtIndex(index)
+                    }
+                }
+            }
+        } else {
+            // if there's no active enemies
+            if !nextSequenceQueued {
+                // and there's no enemy sequence queued, then schedule the next enemy sequence
+                RunAfterDelay(popupTime) { [unowned self] in
+                    self.tossEnemies()
+                }
+                nextSequenceQueued = true
+            }
+        }
+
         // count the number of bomb containers in the game
         var bombCount = 0
         for node in activeEnemies {
@@ -291,5 +344,66 @@ class GameScene: SKScene {
 
         addChild(enemy)
         activeEnemies.append(enemy)
+    }
+
+    func tossEnemies() {
+        // every time this method is called, decrease both popupTime and chainDelay so the game
+        // gets harder as they play
+        popupTime *= 0.991
+        chainDelay *= 0.99
+        // also sneakily increase the speed of the physics world, so objects will rise and fall faster
+        physicsWorld.speed *= 1.02
+
+        let sequenceType = sequence[sequencePosition]
+        switch sequenceType {
+        // for the first 6 sequenceType, create one or more enemies
+        // then wait for them to be destroyed before continuing
+        case .OneNoBomb:
+            createEnemy(forceBomb: .Never)
+
+        case .One:
+            createEnemy()
+
+        case .TwoWithOneBomb:
+            createEnemy(forceBomb: .Never)
+            createEnemy(forceBomb: .Always)
+
+        case .Two:
+            createEnemy()
+            createEnemy()
+
+        case .Three:
+            createEnemy()
+            createEnemy()
+            createEnemy()
+
+        case .Four:
+            createEnemy()
+            createEnemy()
+            createEnemy()
+            createEnemy()
+
+        // for the chain sequenceType, create 5 enemies with a short break in between
+        // and don't wait for each one to be destroyed before continuing
+        case .Chain:
+            createEnemy()
+            // a chain is made up of several enemies with a space between them, and the game
+            // doesn't wait for an enmey to be sliced before showing the next thing in the chain
+            RunAfterDelay(chainDelay / 5.0) { [unowned self] in self.createEnemy() }
+            RunAfterDelay(chainDelay / 5.0 * 2) { [unowned self] in self.createEnemy() }
+            RunAfterDelay(chainDelay / 5.0 * 3) { [unowned self] in self.createEnemy() }
+            RunAfterDelay(chainDelay / 5.0 * 4) { [unowned self] in self.createEnemy() }
+
+        case .FastChain:
+            createEnemy()
+            RunAfterDelay(chainDelay / 10.0) { [unowned self] in self.createEnemy() }
+            RunAfterDelay(chainDelay / 10.0 * 2) { [unowned self] in self.createEnemy() }
+            RunAfterDelay(chainDelay / 10.0 * 3) { [unowned self] in self.createEnemy() }
+            RunAfterDelay(chainDelay / 10.0 * 4) { [unowned self] in self.createEnemy() }
+        }
+
+        sequencePosition += 1
+
+        nextSequenceQueued = false
     }
 }
