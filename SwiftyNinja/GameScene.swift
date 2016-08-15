@@ -119,6 +119,71 @@ class GameScene: SKScene {
         if !swooshSoundActive {
             playSwooshSound()
         }
+
+        let nodes = nodesAtPoint(location)
+        for node in nodes {
+            if node.name == "enemy" {
+                /// destroy penguin
+                // create a particle effect over the penguin
+                let emitter = SKEmitterNode(fileNamed: "sliceHitEnemy")!
+                emitter.position = node.position
+                addChild(emitter)
+
+                // clear its node name so that it can't be swiped repeatedly
+                node.name = ""
+
+                // disable the dynamic of its physics body so that it stops falling
+                node.physicsBody!.dynamic = false
+
+                // make the penguin fade out and scale out at the same time
+                let scaleOut = SKAction.scaleTo(0.001, duration:0.2)
+                let fadeOut = SKAction.fadeOutWithDuration(0.2)
+                let group = SKAction.group([scaleOut, fadeOut])
+
+                // remove the penguin from the scene
+                let seq = SKAction.sequence([group, SKAction.removeFromParent()])
+                node.runAction(seq)
+
+                // increment player's score
+                score += 1
+
+                // remove the enemy from the activeEnemies array
+                let index = activeEnemies.indexOf(node as! SKSpriteNode)!
+                activeEnemies.removeAtIndex(index)
+
+                // play a sound so the player knows they hit the penguin
+                runAction(SKAction.playSoundFileNamed("whack.caf", waitForCompletion: false))
+            } else if node.name == "bomb" {
+                /// destroy bomb
+                // the node called "bomb" is the bomb image, which is inside the bomb container.
+                // so, we need to reference the node's parent when looking up our position,
+                // changing the physics body, removing the node from the scene,
+                // and removing the node from our activeEnemies array
+                // note it's a different particle effect for bombs than for penguins
+                let emitter = SKEmitterNode(fileNamed: "sliceHitBomb")!
+                emitter.position = node.parent!.position
+                addChild(emitter)
+
+                node.name = ""
+                node.parent!.physicsBody!.dynamic = false
+
+                let scaleOut = SKAction.scaleTo(0.001, duration:0.2)
+                let fadeOut = SKAction.fadeOutWithDuration(0.2)
+                let group = SKAction.group([scaleOut, fadeOut])
+
+                let seq = SKAction.sequence([group, SKAction.removeFromParent()])
+
+                node.parent!.runAction(seq)
+
+                let index = activeEnemies.indexOf(node.parent as! SKSpriteNode)!
+                activeEnemies.removeAtIndex(index)
+
+                runAction(SKAction.playSoundFileNamed("explosion.caf", waitForCompletion: false))
+
+                // call endGame()
+                endGame(triggeredByBomb: true)
+            }
+        }
     }
 
     // this method is invoked when the user finishes touching the screen
@@ -141,11 +206,24 @@ class GameScene: SKScene {
             // if there's active enemies, loop through each of them
             for node in activeEnemies {
                 if node.position.y < -140 {
-                    // if any enemy has Y position is lower than 140,
-                    // remove it from the game and from the activeEnemies array
-                    node.removeFromParent()
-                    if let index = activeEnemies.indexOf(node) {
-                        activeEnemies.removeAtIndex(index)
+                    node.removeAllActions()
+                    if node.name == "enemy" {
+                        // if the player misses slicing a penguin, they lose a life
+                        node.name = ""
+                        subtractLife()
+                        node.removeFromParent()
+
+                        if let index = activeEnemies.indexOf(node) {
+                            activeEnemies.removeAtIndex(index)
+                        }
+                    } else if node.name == "bombContainer" {
+                        // if the player slices a bomb, they lose all lives
+                        node.name = ""
+                        node.removeFromParent()
+
+                        if let index = activeEnemies.indexOf(node) {
+                            activeEnemies.removeAtIndex(index)
+                        }
                     }
                 }
             }
